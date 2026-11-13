@@ -62,6 +62,13 @@ export function AddFeedDialog() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [detectedFeeds, setDetectedFeeds] = useState<DiscoveredFeed[]>([]);
+  // Latest successful discovery, keyed by target URL + proxy, so submitting
+  // an already detected URL reuses the result instead of fetching it again.
+  const [discovery, setDiscovery] = useState<{
+    target: string;
+    proxy: string;
+    feeds: DiscoveredFeed[];
+  } | null>(null);
   const [isFeedSelectOpen, setIsFeedSelectOpen] = useState(false);
   const groupItems = groups.map((group) => ({
     value: group.id.toString(),
@@ -76,6 +83,7 @@ export function AddFeedDialog() {
     setRefreshInterval("");
     setIsAdvancedOpen(false);
     setDetectedFeeds([]);
+    setDiscovery(null);
     setIsFeedSelectOpen(false);
   };
 
@@ -94,6 +102,9 @@ export function AddFeedDialog() {
     });
     setIsFeedSelectOpen(false);
     setDetectedFeeds([]);
+    // The picked link comes from the discovery just ran, so submitting it
+    // must not trigger another round of fetching and parsing.
+    setDiscovery({ target: feed.link, proxy: proxy.trim(), feeds: [feed] });
     toast.success(t("feed.toast.detected"));
   };
 
@@ -102,13 +113,24 @@ export function AddFeedDialog() {
     ...(proxy.trim() ? { proxy: proxy.trim() } : {}),
   });
 
+  const runDiscovery = async (target: string): Promise<DiscoveredFeed[]> => {
+    try {
+      const response = await feedAPI.validate(validateRequest(target));
+      const feeds = response.data?.feeds ?? [];
+      setDiscovery(feeds.length > 0 ? { target, proxy: proxy.trim(), feeds } : null);
+      return feeds;
+    } catch (error) {
+      setDiscovery(null);
+      throw error;
+    }
+  };
+
   const handleValidate = async () => {
     if (!url.trim()) return;
 
     setIsValidating(true);
     try {
-      const response = await feedAPI.validate(validateRequest(url.trim()));
-      const feeds = response.data?.feeds ?? [];
+      const feeds = await runDiscovery(url.trim());
 
       if (feeds.length === 0) {
         toast.info(t("feed.toast.noFeedsForUrl"));
@@ -137,10 +159,16 @@ export function AddFeedDialog() {
 
     setIsSubmitting(true);
     try {
-      // Validate before creating so an unreachable or malformed URL fails
+      // Reuse the discovery result when this exact URL (and proxy) was just
+      // detected; otherwise run one discovery so an unreachable URL fails
       // here with a clear message instead of a "successful" empty feed.
-      const check = await feedAPI.validate(validateRequest(url.trim()));
-      const feeds = check.data?.feeds ?? [];
+      const entered = url.trim();
+      const feeds =
+        discovery &&
+        discovery.target === entered &&
+        discovery.proxy === proxy.trim()
+          ? discovery.feeds
+          : await runDiscovery(entered);
       if (feeds.length === 0) {
         toast.error(t("feed.toast.invalidFeed"));
         return;
@@ -151,7 +179,6 @@ export function AddFeedDialog() {
       // entered URL itself is a feed. Only proceed when the entered URL
       // matched; otherwise adopt a single unambiguous discovery, or make the
       // user pick when several were found.
-      const entered = url.trim();
       const normalizeUrl = (value: string) =>
         value.trim().replace(/\/+$/, "").toLowerCase();
       const match = feeds.find(

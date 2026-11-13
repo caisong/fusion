@@ -2,6 +2,7 @@ package httpc
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -71,8 +72,17 @@ func NewClient(timeout time.Duration, proxyURL string, allowPrivate bool) (*http
 	return client, nil
 }
 
+// maxRedirects restores the redirect cap that Go's default client applies;
+// a custom CheckRedirect replaces defaultCheckRedirect, so without an
+// explicit limit a self-redirecting origin loops until the request timeout.
+const maxRedirects = 10
+
 func redirectValidator(allowPrivate bool) func(req *http.Request, via []*http.Request) error {
 	return func(req *http.Request, via []*http.Request) error {
+		if len(via) >= maxRedirects {
+			return fmt.Errorf("stopped after %d redirects", maxRedirects)
+		}
+
 		if req == nil || req.URL == nil {
 			return nil
 		}
