@@ -1,14 +1,23 @@
-const CACHE_NAME = "fusion-static-v2";
+// sw.js is served from <base>/sw.js, so app URLs are resolved relative to its
+// own location; this keeps the worker correct when FUSION_BASE_PATH is used.
+const BASE_URL = new URL("./", self.location.href);
+
+function appUrl(path) {
+  return new URL(path, BASE_URL).pathname;
+}
+
+const CACHE_NAME = "fusion-static-v3";
 const APP_SHELL = [
-  "/",
-  "/index.html",
-  "/manifest.json",
-  "/favicon.ico",
-  "/icon-96.png",
-  "/icon-192.png",
-  "/icon-512.png",
-  "/apple-touch-icon.png",
+  appUrl("./"),
+  appUrl("index.html"),
+  appUrl("manifest.json"),
+  appUrl("favicon.ico"),
+  appUrl("icon-96.png"),
+  appUrl("icon-192.png"),
+  appUrl("icon-512.png"),
+  appUrl("apple-touch-icon.png"),
 ];
+const API_PREFIX = appUrl("api/");
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -47,7 +56,7 @@ function shouldHandleRequest(request) {
     return false;
   }
 
-  if (url.pathname.startsWith("/api/")) {
+  if (url.pathname.startsWith(API_PREFIX)) {
     return false;
   }
 
@@ -66,7 +75,7 @@ async function networkFirst(request) {
       return cachedResponse;
     }
 
-    const appShell = await caches.match("/index.html");
+    const appShell = await caches.match(appUrl("index.html"));
     if (appShell) {
       return appShell;
     }

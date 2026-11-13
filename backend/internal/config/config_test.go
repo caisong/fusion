@@ -81,6 +81,49 @@ func TestLoadFeverUsername(t *testing.T) {
 	})
 }
 
+func TestLoadParsesBasePath(t *testing.T) {
+	t.Setenv("FUSION_PASSWORD", "secret")
+	t.Setenv("FUSION_BASE_PATH", " fusion/ ")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.BasePath != "/fusion" {
+		t.Fatalf("expected BasePath to be %q, got %q", "/fusion", cfg.BasePath)
+	}
+}
+
+func TestLoadBasePathDefaultsToRoot(t *testing.T) {
+	t.Setenv("FUSION_PASSWORD", "secret")
+
+	for _, value := range []string{"", "/"} {
+		t.Setenv("FUSION_BASE_PATH", value)
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() failed for %q: %v", value, err)
+		}
+		if cfg.BasePath != "" {
+			t.Fatalf("expected empty BasePath for %q, got %q", value, cfg.BasePath)
+		}
+	}
+}
+
+func TestLoadRejectsInvalidBasePath(t *testing.T) {
+	t.Setenv("FUSION_PASSWORD", "secret")
+	t.Setenv("FUSION_BASE_PATH", "/fusion?redirect=/")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("expected Load() to fail for invalid FUSION_BASE_PATH")
+	}
+	if !strings.Contains(err.Error(), "invalid FUSION_BASE_PATH") {
+		t.Fatalf("expected error to mention invalid FUSION_BASE_PATH, got %v", err)
+	}
+}
+
 func TestLoadParsesKubernetesStyleFusionPort(t *testing.T) {
 	t.Setenv("FUSION_PASSWORD", "secret")
 	t.Setenv("FUSION_PORT", "tcp://10.43.157.55:8080")

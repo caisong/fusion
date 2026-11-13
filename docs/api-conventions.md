@@ -11,6 +11,9 @@ disagree, the code wins — fix the page.
 
 ## Base path and authentication
 
+- `FUSION_BASE_PATH` mounts everything below a prefix (for example
+  `/fusion/api/items` and `/fusion/fever`); route paths in this document are
+  relative to that prefix.
 - All endpoints are under `/api`. Two exceptions: the Fever compatibility
   API (`/fever*`, see `docs/fever-api.md`) and a bare `GET /oidc/callback`
   registered only when OIDC is configured, for deployments whose redirect

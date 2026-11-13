@@ -62,6 +62,10 @@ func New(store *store.Store, config *config.Config, puller interface {
 		slog.Warn("authentication is disabled because both password and OIDC are empty")
 	}
 
+	if config.BasePath != "" {
+		slog.Info("serving under base path", "base_path", config.BasePath)
+	}
+
 	if config.OIDCIssuer != "" {
 		if strings.TrimSpace(config.OIDCRedirectURI) == "" {
 			return nil, fmt.Errorf("FUSION_OIDC_REDIRECT_URI is required when OIDC is enabled")
@@ -95,12 +99,15 @@ func (h *Handler) SetupRouter() *gin.Engine {
 		slog.Warn("failed to configure trusted proxies", "error", err)
 	}
 
-	r.Use(h.corsMiddleware())
-	r.POST("/fever", h.fever)
-	r.POST("/fever/", h.fever)
-	r.POST("/fever.php", h.fever)
+	basePath := h.basePath()
 
-	api := r.Group("/api")
+	r.Use(h.corsMiddleware())
+	base := r.Group(basePath)
+	base.POST("/fever", h.fever)
+	base.POST("/fever/", h.fever)
+	base.POST("/fever.php", h.fever)
+
+	api := base.Group("/api")
 	{
 		api.POST("/sessions", h.login)
 		api.GET("/sessions", h.sessionStatus)
@@ -112,7 +119,7 @@ func (h *Handler) SetupRouter() *gin.Engine {
 			api.GET("/oidc/login", h.oidcLogin)
 			api.GET("/oidc/callback", h.oidcCallback)
 			// Compatibility route for deployments that configured redirect_uri without /api.
-			r.GET("/oidc/callback", h.oidcCallback)
+			base.GET("/oidc/callback", h.oidcCallback)
 		}
 
 		auth := api.Group("")
@@ -166,6 +173,31 @@ func (h *Handler) configureTrustedProxies(r *gin.Engine) error {
 	}
 
 	return r.SetTrustedProxies(h.config.TrustedProxies)
+}
+
+// basePath is the normalized URL prefix the UI and API are served under.
+// An empty value means the domain root.
+func (h *Handler) basePath() string {
+	if h.config == nil {
+		return ""
+	}
+
+	return h.config.BasePath
+}
+
+// frontendPath prefixes a frontend route or asset path with the base path.
+func (h *Handler) frontendPath(target string) string {
+	return h.basePath() + target
+}
+
+// cookiePath scopes the session cookie to the app so it is not sent to
+// unrelated apps when Fusion shares a host under a subpath.
+func (h *Handler) cookiePath() string {
+	if basePath := h.basePath(); basePath != "" {
+		return basePath
+	}
+
+	return "/"
 }
 
 func (h *Handler) corsMiddleware() gin.HandlerFunc {

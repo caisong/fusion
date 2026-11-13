@@ -1,14 +1,20 @@
 package handler
 
 import (
+	"fmt"
 	"io/fs"
 	"net/http"
 	"path"
+	"regexp"
 	"strings"
 
 	"github.com/0x2E/fusion/internal/web"
 	"github.com/gin-gonic/gin"
 )
+
+const frontendIndexFile = "index.html"
+
+var headTagPattern = regexp.MustCompile(`(?i)<head[^>]*>`)
 
 func (h *Handler) setupFrontendRoutes(r *gin.Engine) error {
 	frontendFS, _, err := web.FrontendFS()
@@ -16,17 +22,19 @@ func (h *Handler) setupFrontendRoutes(r *gin.Engine) error {
 		return err
 	}
 
-	r.StaticFS("/assets", http.FS(frontendFS))
+	basePath := h.basePath()
+	base := r.Group(basePath)
+	base.StaticFS("/assets", http.FS(frontendFS))
 
 	fileServer := http.FileServer(http.FS(frontendFS))
 	r.NoRoute(func(c *gin.Context) {
-		serveFrontendRoute(c, frontendFS, fileServer)
+		serveFrontendRoute(c, frontendFS, fileServer, basePath)
 	})
 
 	return nil
 }
 
-func serveFrontendRoute(c *gin.Context, frontendFS fs.FS, fileServer http.Handler) {
+func serveFrontendRoute(c *gin.Context, frontendFS fs.FS, fileServer http.Handler, basePath string) {
 	if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
 		c.Status(http.StatusNotFound)
 		return
@@ -34,7 +42,25 @@ func serveFrontendRoute(c *gin.Context, frontendFS fs.FS, fileServer http.Handle
 
 	setFrontendSecurityHeaders(c)
 
-	cleanedPath := path.Clean(c.Request.URL.Path)
+	relativePath, ok := trimBasePath(c.Request.URL.Path, basePath)
+	if !ok {
+		// Keep the bare domain root useful when the app is mounted under a
+		// subpath, so visitors do not have to know the exact mount point.
+		if basePath != "" && path.Clean(c.Request.URL.Path) == "/" {
+			c.Redirect(http.StatusFound, basePath+"/")
+			return
+		}
+
+		c.Status(http.StatusNotFound)
+		return
+	}
+
+	if relativePath == "" {
+		c.Redirect(http.StatusMovedPermanently, basePath+"/")
+		return
+	}
+
+	cleanedPath := path.Clean(relativePath)
 	if cleanedPath == "." {
 		cleanedPath = "/"
 	}
@@ -44,14 +70,14 @@ func serveFrontendRoute(c *gin.Context, frontendFS fs.FS, fileServer http.Handle
 		return
 	}
 
-	if cleanedPath == "/" {
-		serveFrontendIndex(c, fileServer)
+	if cleanedPath == "/" || cleanedPath == "/"+frontendIndexFile {
+		serveFrontendIndex(c, frontendFS, basePath)
 		return
 	}
 
 	assetPath := strings.TrimPrefix(cleanedPath, "/")
 	if assetPath == "" {
-		assetPath = "index.html"
+		assetPath = frontendIndexFile
 	}
 
 	if frontendFileExists(frontendFS, assetPath) {
@@ -64,15 +90,65 @@ func serveFrontendRoute(c *gin.Context, frontendFS fs.FS, fileServer http.Handle
 		return
 	}
 
-	serveFrontendIndex(c, fileServer)
+	serveFrontendIndex(c, frontendFS, basePath)
 }
 
-func serveFrontendIndex(c *gin.Context, fileServer http.Handler) {
-	serveFrontendRequestPath(c, fileServer, "/")
+func serveFrontendIndex(c *gin.Context, frontendFS fs.FS, basePath string) {
+	indexHTML, err := fs.ReadFile(frontendFS, frontendIndexFile)
+	if err != nil {
+		internalError(c, err, "read frontend index")
+		return
+	}
+
+	c.Header("Cache-Control", "no-cache")
+	c.Data(http.StatusOK, "text/html; charset=utf-8", injectBasePath(indexHTML, basePath))
+}
+
+// trimBasePath strips the configured prefix from a request path. The second
+// return value is false when the request is outside the app's mount point.
+func trimBasePath(requestPath, basePath string) (string, bool) {
+	if basePath == "" {
+		return requestPath, true
+	}
+
+	if requestPath == basePath {
+		return "", true
+	}
+
+	if strings.HasPrefix(requestPath, basePath+"/") {
+		return strings.TrimPrefix(requestPath, basePath), true
+	}
+
+	return "", false
+}
+
+// injectBasePath inserts a <base> tag and a metadata tag so the same prebuilt
+// bundle works at any mount point: relative asset URLs resolve against <base>
+// and runtime code reads the mount point from the meta tag.
+func injectBasePath(indexHTML []byte, basePath string) []byte {
+	prefix := basePath + "/"
+	injection := fmt.Sprintf(
+		`<base href="%s"><meta name="fusion-base-path" content="%s">`,
+		prefix,
+		prefix,
+	)
+
+	loc := headTagPattern.FindIndex(indexHTML)
+	if loc == nil {
+		return append([]byte(injection), indexHTML...)
+	}
+
+	injected := make([]byte, 0, len(indexHTML)+len(injection))
+	injected = append(injected, indexHTML[:loc[1]]...)
+	injected = append(injected, injection...)
+	injected = append(injected, indexHTML[loc[1]:]...)
+
+	return injected
 }
 
 func setFrontendSecurityHeaders(c *gin.Context) {
-	c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' http: https: data:; font-src 'self' data:; connect-src 'self' http: https:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+	// base-uri must allow the injected <base> while still pinning it to this origin.
+	c.Header("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' http: https: data:; font-src 'self' data:; connect-src 'self' http: https:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'")
 	c.Header("X-Content-Type-Options", "nosniff")
 	c.Header("X-Frame-Options", "DENY")
 	c.Header("Referrer-Policy", "no-referrer")

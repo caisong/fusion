@@ -14,7 +14,11 @@ function getGitVersion(): string {
 }
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
+  // Development serves from the root. Production builds use relative URLs so
+  // the same bundle runs at any mount point; the backend injects a <base> tag
+  // into index.html based on FUSION_BASE_PATH.
+  base: command === "build" ? "./" : "/",
   define: {
     __APP_VERSION__: JSON.stringify(getGitVersion()),
   },
@@ -32,4 +36,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

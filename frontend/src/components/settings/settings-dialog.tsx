@@ -22,6 +22,7 @@ import { usePWAInstall } from "@/hooks/use-pwa-install";
 import { localeLabels, useI18n } from "@/lib/i18n";
 import { ensureLocaleMessages } from "@/lib/i18n/messages";
 import { APIError, settingsAPI, type UpdateSettingsRequest } from "@/lib/api";
+import { withBasePath } from "@/lib/base-path";
 import { waitForSettingsSeed } from "@/lib/settings-sync";
 import type { AppLocale } from "@/store/preferences";
 import { cn } from "@/lib/utils";
@@ -370,7 +371,7 @@ function AboutContent() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-4 pb-8">
       <img
-        src="/icon-96.png"
+        src={withBasePath("/icon-96.png")}
         alt={t("common.fusionLogo")}
         width={64}
         height={64}

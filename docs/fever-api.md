@@ -37,8 +37,10 @@ printf 'fusion:your_password' | md5sum | cut -d' ' -f1
 Use these values in your mobile/desktop RSS client:
 
 - Account type: `Fever`
-- Server URL: your Fusion base URL, for example:
+- Server URL: your Fusion base URL, including `FUSION_BASE_PATH` when
+  configured, for example:
   - `https://rss.example.com`
+  - `https://rss.example.com/fusion`
   - `http://192.168.1.10:8080`
 - Username: `FUSION_FEVER_USERNAME` (default: `fusion`)
 - Password: `FUSION_PASSWORD`

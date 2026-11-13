@@ -191,7 +191,7 @@ func (h *Handler) createSession(c *gin.Context) {
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     "session",
 		Value:    sessionID,
-		Path:     "/",
+		Path:     h.cookiePath(),
 		MaxAge:   int(sessionTTL.Seconds()),
 		HttpOnly: true,
 		Secure:   isSecureRequest(c.Request),
@@ -227,7 +227,7 @@ func (h *Handler) logout(c *gin.Context) {
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     "session",
 		Value:    "",
-		Path:     "/",
+		Path:     h.cookiePath(),
 		MaxAge:   -1,
 		HttpOnly: true,
 		Secure:   isSecureRequest(c.Request),

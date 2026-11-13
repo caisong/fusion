@@ -6,6 +6,7 @@ import { ThemeProvider } from "next-themes";
 import { routeTree } from "./routeTree.gen";
 import { Toaster } from "@/components/ui/sonner";
 import { setUnauthorizedCallback } from "@/lib/api";
+import { BASE_PATH, withBasePath } from "@/lib/base-path";
 import { preloadLocaleMessages } from "@/lib/i18n";
 import { queryClient } from "@/lib/query-client";
 import { registerPWA } from "@/lib/pwa";
@@ -13,7 +14,7 @@ import { usePreferencesStore } from "@/store";
 import "./index.css";
 
 // Create a new router instance
-const router = createRouter({ routeTree });
+const router = createRouter({ routeTree, basepath: BASE_PATH || "/" });
 
 registerPWA();
 
@@ -27,7 +28,7 @@ window.addEventListener("pageshow", (event) => {
 });
 
 setUnauthorizedCallback(() => {
-  window.location.href = "/login";
+  window.location.href = withBasePath("/login");
 });
 
 const initialLocale = usePreferencesStore.getState().locale;

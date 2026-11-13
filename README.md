@@ -97,13 +97,16 @@ Then configure based on your goal:
   - Optional: `FUSION_PORT`, `FUSION_DB_PATH`
 - Expose Fusion behind a reverse proxy
   - Configure: `FUSION_CORS_ALLOWED_ORIGINS`, `FUSION_TRUSTED_PROXIES`
+- Host Fusion under a subpath (e.g. `https://example.com/fusion/`)
+  - Configure: `FUSION_BASE_PATH=/fusion`
+  - Proxy the prefix unchanged (no path rewrite); see [`.env.example`](./.env.example)
 - Use mobile/desktop Fever clients (Reeder, Unread, FeedMe)
   - Configure: `FUSION_FEVER_USERNAME` (default: `fusion`)
   - Guide: [`docs/fever-api.md`](./docs/fever-api.md)
 - Use SSO instead of password-only login
   - Configure: `FUSION_OIDC_*`
-  - Set `FUSION_OIDC_REDIRECT_URI` to `https://<host>/api/oidc/callback`
-  - `https://<host>/oidc/callback` is accepted for compatibility
+  - Set `FUSION_OIDC_REDIRECT_URI` to `https://<host><base>/api/oidc/callback`
+  - `https://<host><base>/oidc/callback` is accepted for compatibility
 - Tune feed pull behavior
   - Configure: `FUSION_PULL_INTERVAL`, `FUSION_PULL_TIMEOUT`, `FUSION_PULL_CONCURRENCY`, `FUSION_PULL_MAX_BACKOFF`
   - Optional for private networks: `FUSION_ALLOW_PRIVATE_FEEDS`

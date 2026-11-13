@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { translate, useI18n } from "@/lib/i18n";
 import { oidcAPI, sessionAPI } from "@/lib/api";
+import { withBasePath } from "@/lib/base-path";
 import { defaultArticleFilter } from "@/lib/article-filter";
 
 export const Route = createLazyFileRoute("/login")({
@@ -25,7 +26,7 @@ function LoginPage() {
     const params = new URLSearchParams(window.location.search);
     if (params.get("error") === "oidc_failed") {
       toast.error(translate("login.oidcFailed"));
-      window.history.replaceState({}, "", "/login");
+      window.history.replaceState({}, "", withBasePath("/login"));
     }
 
     oidcAPI
@@ -75,7 +76,7 @@ function LoginPage() {
       <div className="w-full max-w-sm space-y-6 p-4">
         <div className="flex flex-col items-center gap-2">
           <img
-            src="/icon-96.png"
+            src={withBasePath("/icon-96.png")}
             alt={t("common.fusionLogo")}
             width={48}
             height={48}

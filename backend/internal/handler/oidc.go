@@ -35,18 +35,18 @@ func (h *Handler) oidcCallback(c *gin.Context) {
 	state := c.Query("state")
 	code := c.Query("code")
 	if state == "" || code == "" {
-		c.Redirect(http.StatusTemporaryRedirect, "/login?error=oidc_failed")
+		c.Redirect(http.StatusTemporaryRedirect, h.frontendPath("/login?error=oidc_failed"))
 		return
 	}
 
 	userID, err := h.oidcAuth.Callback(c.Request.Context(), state, code)
 	if err != nil {
 		slog.Error("OIDC callback failed", "error", err)
-		c.Redirect(http.StatusTemporaryRedirect, "/login?error=oidc_failed")
+		c.Redirect(http.StatusTemporaryRedirect, h.frontendPath("/login?error=oidc_failed"))
 		return
 	}
 
 	slog.Info("OIDC login successful", "user", userID)
 	h.createSession(c)
-	c.Redirect(http.StatusTemporaryRedirect, "/")
+	c.Redirect(http.StatusTemporaryRedirect, h.frontendPath("/"))
 }

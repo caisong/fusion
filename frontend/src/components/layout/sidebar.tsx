@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { FeedList } from "@/components/feed/feed-list";
 import { sessionAPI } from "@/lib/api";
+import { withBasePath } from "@/lib/base-path";
 import { useI18n } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import { useUIStore } from "@/store";
@@ -32,7 +33,7 @@ export function Sidebar() {
     // A full-page navigation leaves this document so the route guard starts
     // fresh; the SPA router would keep its cached "session verified" verdict.
     resetSessionGuard();
-    window.location.assign("/login");
+    window.location.assign(withBasePath("/login"));
   };
 
   return (
@@ -40,7 +41,7 @@ export function Sidebar() {
       {/* Header */}
       <div className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
         <img
-          src="/icon-96.png"
+          src={withBasePath("/icon-96.png")}
           alt={t("common.fusionLogo")}
           width={32}
           height={32}

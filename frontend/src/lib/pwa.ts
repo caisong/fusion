@@ -1,8 +1,9 @@
 import { toast } from "sonner";
+import { BASE_PATH } from "@/lib/base-path";
 import { translate } from "@/lib/i18n";
 import { getPreferredLocale } from "@/store/preferences";
 
-const SW_URL = "/sw.js";
+const SW_URL = `${BASE_PATH}/sw.js`;
 const SKIP_WAITING_MESSAGE = { type: "SKIP_WAITING" } as const;
 
 let deferredInstallPrompt: BeforeInstallPromptEvent | null = null;

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 )
@@ -17,6 +18,7 @@ type Config struct {
 	CORSAllowedOrigins []string // Allowed Origins for CORS. Empty means allow all.
 	TrustedProxies     []string // Trusted reverse proxies for client IP resolution. Empty disables proxy trust.
 	AllowPrivateFeeds  bool     // Allow pulling private/localhost feed URLs.
+	BasePath           string   // URL path prefix the web UI and API are served under. Empty means root.
 
 	PullInterval    int // Pull interval in seconds (default: 1800 = 30 min)
 	PullTimeout     int // Request timeout in seconds (default: 30)
@@ -118,6 +120,11 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	basePath, err := parseBasePath(os.Getenv("FUSION_BASE_PATH"))
+	if err != nil {
+		return nil, err
+	}
+
 	logLevel := os.Getenv("FUSION_LOG_LEVEL")
 	if logLevel == "" {
 		logLevel = "INFO"
@@ -136,6 +143,7 @@ func Load() (*Config, error) {
 		CORSAllowedOrigins: corsAllowedOrigins,
 		TrustedProxies:     trustedProxies,
 		AllowPrivateFeeds:  allowPrivateFeeds,
+		BasePath:           basePath,
 		PullInterval:       pullInterval,
 		PullTimeout:        pullTimeout,
 		PullConcurrency:    pullConcurrency,
@@ -214,6 +222,32 @@ func parsePort(val string) (int, error) {
 	}
 
 	return strconv.Atoi(port)
+}
+
+// parseBasePath normalizes FUSION_BASE_PATH into a clean URL prefix: a leading
+// slash, no trailing slash, and an empty string for the domain root. Only a
+// plain path is accepted so the value can be safely embedded in the served
+// index.html.
+func parseBasePath(val string) (string, error) {
+	trimmed := strings.TrimSpace(val)
+	if trimmed == "" || trimmed == "/" {
+		return "", nil
+	}
+
+	if !strings.HasPrefix(trimmed, "/") {
+		trimmed = "/" + trimmed
+	}
+
+	if strings.ContainsAny(trimmed, " \t\r\n\\\"'<>?#") {
+		return "", fmt.Errorf("invalid FUSION_BASE_PATH: must be a URL path without whitespace, query or fragment")
+	}
+
+	cleaned := path.Clean(trimmed)
+	if cleaned == "/" {
+		return "", nil
+	}
+
+	return cleaned, nil
 }
 
 func parseCSVEnv(val string) []string {
