@@ -13,7 +13,10 @@ disagree, the code wins — fix the page.
 
 - `FUSION_BASE_PATH` mounts everything below a prefix (for example
   `/fusion/api/items` and `/fusion/fever`); route paths in this document are
-  relative to that prefix.
+  relative to that prefix. Endpoints are reachable both under the prefix and
+  unprefixed, because a proxy may strip the prefix and the backend cannot
+  redirect between the two forms safely (it never sees the browser's URL, so
+  a wrong guess loops). The SPA canonicalizes the URL client-side instead.
 - All endpoints are under `/api`. Two exceptions: the Fever compatibility
   API (`/fever*`, see `docs/fever-api.md`) and a bare `GET /oidc/callback`
   registered only when OIDC is configured, for deployments whose redirect

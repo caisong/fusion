@@ -57,23 +57,29 @@ func TestSetupRouterServesFrontendUnderBasePath(t *testing.T) {
 	h := &Handler{config: &config.Config{BasePath: "/fusion"}}
 	r := h.SetupRouter()
 
-	t.Run("redirects domain root to base path", func(t *testing.T) {
+	t.Run("serves index at domain root without redirect", func(t *testing.T) {
 		w := performRequest(r, http.MethodGet, "/", nil, nil)
-		if w.Code != http.StatusFound {
-			t.Fatalf("expected status 302, got %d", w.Code)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d", w.Code)
 		}
-		if location := w.Header().Get("Location"); location != "/fusion/" {
-			t.Fatalf("expected Location %q, got %q", "/fusion/", location)
+		if location := w.Header().Get("Location"); location != "" {
+			t.Fatalf("expected no redirect, got Location %q", location)
+		}
+		if !strings.Contains(w.Body.String(), `<base href="/fusion/">`) {
+			t.Fatalf("expected injected base tag, got %q", w.Body.String())
 		}
 	})
 
-	t.Run("redirects base path without trailing slash", func(t *testing.T) {
+	t.Run("serves index for base path without trailing slash", func(t *testing.T) {
 		w := performRequest(r, http.MethodGet, "/fusion", nil, nil)
-		if w.Code != http.StatusMovedPermanently {
-			t.Fatalf("expected status 301, got %d", w.Code)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d", w.Code)
 		}
-		if location := w.Header().Get("Location"); location != "/fusion/" {
-			t.Fatalf("expected Location %q, got %q", "/fusion/", location)
+		if location := w.Header().Get("Location"); location != "" {
+			t.Fatalf("expected no redirect, got Location %q", location)
+		}
+		if !strings.Contains(w.Body.String(), `<base href="/fusion/">`) {
+			t.Fatalf("expected injected base tag, got %q", w.Body.String())
 		}
 	})
 
@@ -115,8 +121,30 @@ func TestSetupRouterServesFrontendUnderBasePath(t *testing.T) {
 		}
 	})
 
-	t.Run("returns 404 outside base path", func(t *testing.T) {
-		for _, target := range []string{"/feeds", "/api/not-found", "/assets/does-not-exist.js"} {
+	t.Run("serves index for unprefixed client-side route", func(t *testing.T) {
+		// Prefix-stripping proxies (proxy_pass with a URI) send the SPA route
+		// unprefixed; it must fall through to the app shell.
+		w := performRequest(r, http.MethodGet, "/feeds", nil, nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d", w.Code)
+		}
+		if !strings.Contains(w.Body.String(), `<base href="/fusion/">`) {
+			t.Fatalf("expected injected base tag, got %q", w.Body.String())
+		}
+	})
+
+	t.Run("injects base into index.html requests", func(t *testing.T) {
+		w := performRequest(r, http.MethodGet, "/fusion/index.html", nil, nil)
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected status 200, got %d", w.Code)
+		}
+		if !strings.Contains(w.Body.String(), `<base href="/fusion/">`) {
+			t.Fatalf("expected injected base tag, got %q", w.Body.String())
+		}
+	})
+
+	t.Run("returns 404 for unknown api path on both mounts", func(t *testing.T) {
+		for _, target := range []string{"/api/not-found", "/fusion/api/not-found"} {
 			w := performRequest(r, http.MethodGet, target, nil, nil)
 			if w.Code != http.StatusNotFound {
 				t.Fatalf("expected status 404 for %q, got %d", target, w.Code)
@@ -124,17 +152,22 @@ func TestSetupRouterServesFrontendUnderBasePath(t *testing.T) {
 		}
 	})
 
-	t.Run("returns 404 for unknown api path under base path", func(t *testing.T) {
-		w := performRequest(r, http.MethodGet, "/fusion/api/not-found", nil, nil)
-		if w.Code != http.StatusNotFound {
-			t.Fatalf("expected status 404, got %d", w.Code)
+	t.Run("returns 404 for missing asset on both mounts", func(t *testing.T) {
+		for _, target := range []string{"/assets/does-not-exist-0db74db9a5.js", "/fusion/assets/does-not-exist-0db74db9a5.js"} {
+			w := performRequest(r, http.MethodGet, target, nil, nil)
+			if w.Code != http.StatusNotFound {
+				t.Fatalf("expected status 404 for %q, got %d", target, w.Code)
+			}
 		}
 	})
 
-	t.Run("returns 404 for missing asset under base path", func(t *testing.T) {
-		w := performRequest(r, http.MethodGet, "/fusion/assets/does-not-exist-0db74db9a5.js", nil, nil)
-		if w.Code != http.StatusNotFound {
-			t.Fatalf("expected status 404, got %d", w.Code)
+	t.Run("exposes api on both mounts", func(t *testing.T) {
+		// The root copy exists for proxies that strip the prefix.
+		for _, target := range []string{"/api/oidc/enabled", "/fusion/api/oidc/enabled"} {
+			w := performRequest(r, http.MethodGet, target, nil, nil)
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected status 200 for %q, got %d", target, w.Code)
+			}
 		}
 	})
 }

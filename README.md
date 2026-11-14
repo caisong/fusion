@@ -99,7 +99,7 @@ Then configure based on your goal:
   - Configure: `FUSION_CORS_ALLOWED_ORIGINS`, `FUSION_TRUSTED_PROXIES`
 - Host Fusion under a subpath (e.g. `https://example.com/fusion/`)
   - Configure: `FUSION_BASE_PATH=/fusion`
-  - Proxy the prefix unchanged (no path rewrite); see [`.env.example`](./.env.example)
+  - Proxy the prefix unchanged or stripped (no path rewrite); see [`.env.example`](./.env.example)
 - Use mobile/desktop Fever clients (Reeder, Unread, FeedMe)
   - Configure: `FUSION_FEVER_USERNAME` (default: `fusion`)
   - Guide: [`docs/fever-api.md`](./docs/fever-api.md)

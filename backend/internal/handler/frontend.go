@@ -16,19 +16,19 @@ const frontendIndexFile = "index.html"
 
 var headTagPattern = regexp.MustCompile(`(?i)<head[^>]*>`)
 
-func (h *Handler) setupFrontendRoutes(r *gin.Engine) error {
+func (h *Handler) setupFrontendRoutes(r *gin.Engine, mounts []*gin.RouterGroup) error {
 	frontendFS, _, err := web.FrontendFS()
 	if err != nil {
 		return err
 	}
 
-	basePath := h.basePath()
-	base := r.Group(basePath)
-	base.StaticFS("/assets", http.FS(frontendFS))
+	for _, mount := range mounts {
+		mount.StaticFS("/assets", http.FS(frontendFS))
+	}
 
 	fileServer := http.FileServer(http.FS(frontendFS))
 	r.NoRoute(func(c *gin.Context) {
-		serveFrontendRoute(c, frontendFS, fileServer, basePath)
+		serveFrontendRoute(c, frontendFS, fileServer, h.basePath())
 	})
 
 	return nil
@@ -42,23 +42,11 @@ func serveFrontendRoute(c *gin.Context, frontendFS fs.FS, fileServer http.Handle
 
 	setFrontendSecurityHeaders(c)
 
-	relativePath, ok := trimBasePath(c.Request.URL.Path, basePath)
-	if !ok {
-		// Keep the bare domain root useful when the app is mounted under a
-		// subpath, so visitors do not have to know the exact mount point.
-		if basePath != "" && path.Clean(c.Request.URL.Path) == "/" {
-			c.Redirect(http.StatusFound, basePath+"/")
-			return
-		}
-
-		c.Status(http.StatusNotFound)
-		return
-	}
-
-	if relativePath == "" {
-		c.Redirect(http.StatusMovedPermanently, basePath+"/")
-		return
-	}
+	// Both the prefixed and the unprefixed form reach this fallback: proxies
+	// forward the prefix unchanged or strip it. Never redirect here — the
+	// backend cannot see the browser's URL, so a redirect guessed from the
+	// upstream path loops behind path-rewriting proxies (301 loop via nginx).
+	relativePath := trimBasePath(c.Request.URL.Path, basePath)
 
 	cleanedPath := path.Clean(relativePath)
 	if cleanedPath == "." {
@@ -104,22 +92,23 @@ func serveFrontendIndex(c *gin.Context, frontendFS fs.FS, basePath string) {
 	c.Data(http.StatusOK, "text/html; charset=utf-8", injectBasePath(indexHTML, basePath))
 }
 
-// trimBasePath strips the configured prefix from a request path. The second
-// return value is false when the request is outside the app's mount point.
-func trimBasePath(requestPath, basePath string) (string, bool) {
+// trimBasePath strips the configured prefix from a request path so SPA routes
+// and assets resolve the same whether the proxy forwarded the prefix or
+// stripped it. Paths outside the prefix are returned unchanged.
+func trimBasePath(requestPath, basePath string) string {
 	if basePath == "" {
-		return requestPath, true
+		return requestPath
 	}
 
 	if requestPath == basePath {
-		return "", true
+		return ""
 	}
 
 	if strings.HasPrefix(requestPath, basePath+"/") {
-		return strings.TrimPrefix(requestPath, basePath), true
+		return strings.TrimPrefix(requestPath, basePath)
 	}
 
-	return "", false
+	return requestPath
 }
 
 // injectBasePath inserts a <base> tag and a metadata tag so the same prebuilt

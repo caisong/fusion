@@ -102,12 +102,34 @@ func (h *Handler) SetupRouter() *gin.Engine {
 	basePath := h.basePath()
 
 	r.Use(h.corsMiddleware())
-	base := r.Group(basePath)
-	base.POST("/fever", h.fever)
-	base.POST("/fever/", h.fever)
-	base.POST("/fever.php", h.fever)
 
-	api := base.Group("/api")
+	// With a base path, routes are mounted twice: under the prefix (canonical)
+	// and at the root. The root copies serve proxies that strip the prefix.
+	// Redirection between the two forms is not an option because the backend
+	// never sees the browser's URL, so a wrong guess loops (bug: 301 loop
+	// behind nginx proxy_pass with a rewritten path).
+	mounts := []*gin.RouterGroup{r.Group("")}
+	if basePath != "" {
+		mounts = append(mounts, r.Group(basePath))
+	}
+	for _, mount := range mounts {
+		h.registerRoutes(mount)
+	}
+
+	if err := h.setupFrontendRoutes(r, mounts); err != nil {
+		slog.Warn("failed to configure frontend routes", "error", err)
+	}
+
+	return r
+}
+
+// registerRoutes mounts the Fever, API and OIDC endpoints on one mount point.
+func (h *Handler) registerRoutes(mount *gin.RouterGroup) {
+	mount.POST("/fever", h.fever)
+	mount.POST("/fever/", h.fever)
+	mount.POST("/fever.php", h.fever)
+
+	api := mount.Group("/api")
 	{
 		api.POST("/sessions", h.login)
 		api.GET("/sessions", h.sessionStatus)
@@ -119,7 +141,7 @@ func (h *Handler) SetupRouter() *gin.Engine {
 			api.GET("/oidc/login", h.oidcLogin)
 			api.GET("/oidc/callback", h.oidcCallback)
 			// Compatibility route for deployments that configured redirect_uri without /api.
-			base.GET("/oidc/callback", h.oidcCallback)
+			mount.GET("/oidc/callback", h.oidcCallback)
 		}
 
 		auth := api.Group("")
@@ -159,12 +181,6 @@ func (h *Handler) SetupRouter() *gin.Engine {
 			auth.PATCH("/settings", h.updateSettings)
 		}
 	}
-
-	if err := h.setupFrontendRoutes(r); err != nil {
-		slog.Warn("failed to configure frontend routes", "error", err)
-	}
-
-	return r
 }
 
 func (h *Handler) configureTrustedProxies(r *gin.Engine) error {

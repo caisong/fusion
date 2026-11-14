@@ -13,6 +13,17 @@ import { registerPWA } from "@/lib/pwa";
 import { usePreferencesStore } from "@/store";
 import "./index.css";
 
+// The backend serves the SPA from the domain root as well as the base path and
+// must not redirect between them: behind a prefix-stripping proxy it cannot
+// tell where the browser actually is, so redirects loop. Canonicalize the URL
+// client-side instead; replaceState never hits the server, so this cannot loop.
+if (BASE_PATH) {
+  const { pathname, search, hash } = window.location;
+  if (pathname === "/" || pathname === BASE_PATH) {
+    history.replaceState(null, "", `${BASE_PATH}/${search}${hash}`);
+  }
+}
+
 // Create a new router instance
 const router = createRouter({ routeTree, basepath: BASE_PATH || "/" });
 
