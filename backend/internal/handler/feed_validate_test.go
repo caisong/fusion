@@ -6,9 +6,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/0x2E/fusion/internal/config"
+	"golang.org/x/text/encoding/simplifiedchinese"
 )
 
 type validateFeedBody struct {
@@ -146,5 +148,54 @@ func TestValidateFeedReturnsCommonPathFeedForInvalidPath(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected discovery to surface %q for a broken entered path, got %+v", server.URL+"/feed.xml", body.Data.Feeds)
+	}
+}
+
+// A pasted feed URL must be fetched and parsed as-is with a single request.
+// Handing it to feedfinder additionally probes ~20 well-known paths on the
+// host, and WAF-protected sites rate-limit that burst, so discovery of the
+// valid entered URL can come back empty. The GBK payload mirrors Discuz
+// forum feeds (e.g. 52pojie), which declare a non-UTF-8 encoding.
+func TestValidateFeedDirectGBKURLSingleRequest(t *testing.T) {
+	title, err := simplifiedchinese.GBK.NewEncoder().String("吾爱破解 - 52pojie.cn - 『原创发布区』")
+	if err != nil {
+		t.Fatalf("encode gbk title: %v", err)
+	}
+
+	var requests int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requests, 1)
+		if r.URL.Path != "/forum.php" || r.URL.Query().Get("mod") != "rss" || r.URL.Query().Get("fid") != "2" {
+			// Behave like the forum's WAF: any probe other than the real
+			// feed URL gets throttled.
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.Header().Set("Content-Type", "application/xml")
+		_, _ = fmt.Fprintf(w, `<?xml version="1.0" encoding="gbk"?>
+<rss version="2.0"><channel><title>%s</title><link>https://www.52pojie.cn/forum-2-1.html</link>
+<item><title>Item</title><link>https://www.52pojie.cn/thread-1-1-1.html</link></item>
+</channel></rss>`, title)
+	}))
+	defer server.Close()
+
+	h := &Handler{config: &config.Config{AllowPrivateFeeds: true}}
+	feedURL := server.URL + "/forum.php?mod=rss&fid=2"
+
+	code, body := postValidateFeed(t, h, feedURL)
+	if code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", code)
+	}
+	if len(body.Data.Feeds) != 1 {
+		t.Fatalf("expected 1 feed, got %d: %+v", len(body.Data.Feeds), body.Data.Feeds)
+	}
+	if body.Data.Feeds[0].Title != "吾爱破解 - 52pojie.cn - 『原创发布区』" {
+		t.Fatalf("expected decoded GBK title, got %q", body.Data.Feeds[0].Title)
+	}
+	if body.Data.Feeds[0].Link != feedURL {
+		t.Fatalf("expected link %q, got %q", feedURL, body.Data.Feeds[0].Link)
+	}
+	if got := atomic.LoadInt32(&requests); got != 1 {
+		t.Fatalf("expected exactly 1 request for a direct feed URL, got %d", got)
 	}
 }

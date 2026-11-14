@@ -282,6 +282,19 @@ func (h *Handler) validateFeed(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
 	defer cancel()
 
+	// Pasting a feed URL is the common case: serve it with a single request.
+	// Delegating to feedfinder would additionally probe ~20 well-known paths
+	// on the host, and WAF-protected sites rate-limit that burst, so even the
+	// valid entered URL comes back empty (e.g. Discuz forum RSS).
+	if parsedFeed, err := h.fetchParsedFeed(ctx, target, proxy); err == nil {
+		feeds := []discoveredFeed{{
+			Title: pull.NormalizeTitle(parsedFeed.Title),
+			Link:  target,
+		}}
+		dataResponse(c, validateFeedResponse{Feeds: feeds})
+		return
+	}
+
 	var finderOptions *feedfinder.Options
 	if proxy != "" {
 		finderOptions = &feedfinder.Options{RequestProxy: &proxy}
@@ -303,9 +316,11 @@ func (h *Handler) validateFeed(c *gin.Context) {
 	}
 
 	if len(feeds) == 0 {
-		title, parseErr := h.parseFeedTitle(ctx, target, proxy)
-		if parseErr == nil {
-			feeds = append(feeds, discoveredFeed{Title: title, Link: target})
+		if parsedFeed, parseErr := h.fetchParsedFeed(ctx, target, proxy); parseErr == nil {
+			feeds = append(feeds, discoveredFeed{
+				Title: pull.NormalizeTitle(parsedFeed.Title),
+				Link:  target,
+			})
 		}
 	}
 
@@ -340,40 +355,34 @@ func normalizeDiscoveredFeeds(found []feedfinder.Feed) []discoveredFeed {
 	return result
 }
 
-func (h *Handler) parseFeedTitle(ctx context.Context, target, proxy string) (string, error) {
+// fetchParsedFeed GETs the target and parses it as a feed, honoring the
+// per-feed proxy and SSRF rules. Used both to serve a pasted feed URL directly
+// and as the last-resort fallback when discovery finds nothing.
+func (h *Handler) fetchParsedFeed(ctx context.Context, target, proxy string) (*gofeed.Feed, error) {
 	allowPrivateFeeds := h.config != nil && h.config.AllowPrivateFeeds
 
 	client, err := httpc.NewClient(30*time.Second, proxy, allowPrivateFeeds)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	httpc.SetDefaultHeaders(req)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", errors.New("feed fetch failed")
+		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
 	}
 
-	parsedFeed, err := gofeed.NewParser().Parse(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	if parsedFeed == nil {
-		return "", nil
-	}
-
-	return pull.NormalizeTitle(parsedFeed.Title), nil
+	return gofeed.NewParser().Parse(resp.Body)
 }
 
 func (h *Handler) refreshFeed(c *gin.Context) {
